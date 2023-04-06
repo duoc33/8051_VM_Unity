@@ -1,7 +1,10 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using UnityEngine;
-
+/// <summary>
+/// P2_Led灯
+/// </summary>
 public class Led_Function : MonoBehaviour
 {
     [SerializeField]
@@ -19,10 +22,10 @@ public class Led_Function : MonoBehaviour
             { 1, 0x2 },
             { 2, 0x4 },
             { 3, 0x8 },
-            {  4 ,0x10},
-            {  5 ,0x20},
-            {  6 ,0x40},
-            {  7 ,0x80},
+            { 4 ,0x10},
+            { 5 ,0x20},
+            { 6 ,0x40},
+            { 7 ,0x80},
         };
         leds = new List<Transform>();
         isShow =new bool[8];
@@ -31,26 +34,30 @@ public class Led_Function : MonoBehaviour
             leds.Add(t);
         }
     }
-    public void LED_Light_On(Queue<byte> bytes,bool isRunning) 
+
+    public void LED_Light_On(Queue<byte> bytes) 
     {
-        if (bytes.Count > 0 && isRunning)
+        if (bytes.Count > 0) 
         {
-            byte p2 = bytes.Dequeue();
-            LED_Show(p2);
+            LED_Thread(bytes);
         }
-        else if (!isRunning) 
+    }
+    public void Close()
+    {
+        foreach (Transform item in leds)
         {
-            if (bytes.Count > 0)
-                bytes.Clear();
-            foreach (var item in leds)
+            if (item.GetComponent<Light>().enabled)
             {
-                if (item.GetComponent<Light>().enabled) 
-                {
-                    item.GetComponent<Renderer>().material = OriginalMaterial;
-                    item.GetComponent<Light>().enabled = false;
-                }
+                item.GetComponent<Renderer>().material = OriginalMaterial;
+                item.GetComponent<Light>().enabled = false;
             }
         }
+    }
+    byte _p2;
+    private void LED_Thread(Queue<byte> bytes)
+    {
+        _p2 = bytes.Dequeue();
+        LED_Show(_p2);
     }
     private void LED_Show(byte p2)
     {
@@ -61,14 +68,14 @@ public class Led_Function : MonoBehaviour
             {
                 if (!leds[i].GetComponent<Light>().enabled)
                     leds[i].GetComponent<Light>().enabled = true;
-                if (!leds[i].GetComponent<Renderer>().material.name.Equals("red"))
+                if (!leds[i].GetComponent<Renderer>().sharedMaterial.name.Equals("Red"))
                     leds[i].GetComponent<Renderer>().material = ChangeMaterial;
             }
             else
             {
                 if (leds[i].GetComponent<Light>().enabled)
                     leds[i].GetComponent<Light>().enabled = false;
-                if (!leds[i].GetComponent<Renderer>().material.name.Equals("Deng"))
+                if (!leds[i].GetComponent<Renderer>().sharedMaterial.name.Equals("Deng"))
                     leds[i].GetComponent<Renderer>().material = OriginalMaterial;
             }
         }

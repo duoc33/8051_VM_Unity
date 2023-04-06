@@ -1,31 +1,29 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using UnityEngine;
-
+using UnityEngine.Events;
 
 public class VM_Runtime : MonoBehaviour
 {
     public static VM_Runtime Instance { get; private set; }
-    public bool isRunning = false;
     private void Awake()
     {
-        if (Instance == null)
-            Instance = this;
-        else Destroy(gameObject);
+        Instance = this;
     }
-    //@"C:\Users\35754\Desktop\单片机\codefile\Led\template.hex"
+    public bool isRunning = false;
+    public UnityAction CloseAction;//进程关闭后，清零数据，复原场景
+    public UnityAction StartAction;
     Thread VM_Thread = null;
-    string pathInfo = "";
     public void load_progrom(string path)
     {
-        if (VM_Thread != null && !pathInfo.Equals(path))
+        if (VM_Thread != null && VM_Thread.IsAlive)
         {
             close_progrom();
         }
-        if (pathInfo.Equals(path)) return;
-        pathInfo = path;
         isRunning =true;
+        StartAction?.Invoke();
         VM_Thread = new Thread(test_progrom);
         VM_Thread.Start(path);
         print("开启线程");
@@ -33,6 +31,7 @@ public class VM_Runtime : MonoBehaviour
     public void close_progrom() 
     {
         isRunning = false;
+        CloseAction?.Invoke();
         if (VM_Thread != null && VM_Thread.IsAlive) 
         {
             VM_8051_Mono.Instance.isRunning = false;
@@ -60,17 +59,16 @@ public class VM_Runtime : MonoBehaviour
         VM_8051_Mono.Instance.isRunning = true;
         VM_8051_Mono.Instance.Reset();
         VM_8051_Mono.Instance.LoadProgram(code);
-        VM_8051_Mono.Instance.Run(0, 0);
+        VM_8051_Mono.Instance.Run();
     }
     private void OnDestroy()
     {
         if (VM_Thread != null && VM_Thread.IsAlive)
             VM_Thread.Abort();
+        VM_8051_Mono.Instance.isRunning = false;
+        isRunning = false;
     }
 }
-
-
-
 
 //    private void Start()
 //    {
@@ -94,30 +92,30 @@ public class VM_Runtime : MonoBehaviour
 //        }
 //#endif
 //    }
-//private void Show_Disa()
-//{
+// private void Show_Disa()
+// {
 
-//    InstructInfo info =VM_8051_Mono.Instance.instr.info;
-//    if (VM_8051_Mono.Instance.opcodeDic.ContainsKey(VM_8051_Mono.Instance.instr.opcode))
-//    {
-//        print($"PC: {VM_8051_Mono.Instance.vm_pc().ToString("x")},Cycles: {VM_8051_Mono.Instance.vm_cycles()}");
-//        string opcodeHex = VM_8051_Mono.Instance.instr.opcode.ToString("X");
-//        string op0 = VM_8051_Mono.Instance.instr.op0.ToString("X");
-//        string op1 = VM_8051_Mono.Instance.instr.op1.ToString("X");
-//        if (info.bytes == 1)
-//        {
-//            print($"opcode 0x{opcodeHex} : ASM_Name {info.opcode_name} ");
-//        }
-//        else if (info.bytes == 2)
-//        {
-//            print($"opcode 0x{opcodeHex}: ASM_Name {info.opcode_name} , opNum0 0x{op0} ");
-//        }
-//        else
-//        {
-//            print($"opcode 0x{opcodeHex}: ASM_Name {info.opcode_name} ,opNum0 0x{op0} , opNum1 0x{op1}");
-//        }
-//    }
-//}
+//     InstructInfo info = VM_8051_Mono.Instance.instr.info;
+//     if (VM_8051_Mono.Instance.opcodeDic.ContainsKey(VM_8051_Mono.Instance.instr.opcode))
+//     {
+//         print($"PC: {VM_8051_Mono.Instance.vm_pc().ToString("x")},Cycles: {VM_8051_Mono.Instance.vm_cycles()}");
+//         string opcodeHex = VM_8051_Mono.Instance.instr.opcode.ToString("X");
+//         string op0 = VM_8051_Mono.Instance.instr.op0.ToString("X");
+//         string op1 = VM_8051_Mono.Instance.instr.op1.ToString("X");
+//         if (info.bytes == 1)
+//         {
+//             print($"opcode 0x{opcodeHex} : ASM_Name {info.opcode_name} ");
+//         }
+//         else if (info.bytes == 2)
+//         {
+//             print($"opcode 0x{opcodeHex}: ASM_Name {info.opcode_name} , opNum0 0x{op0} ");
+//         }
+//         else
+//         {
+//             print($"opcode 0x{opcodeHex}: ASM_Name {info.opcode_name} ,opNum0 0x{op0} , opNum1 0x{op1}");
+//         }
+//     }
+// }
 //private readonly static string[] HexFilePath =
 //{
 //    @"C:\Users\35754\Desktop\单片机\虚拟机\simu8051-master\test\t0_nop\Objects\code.hex",

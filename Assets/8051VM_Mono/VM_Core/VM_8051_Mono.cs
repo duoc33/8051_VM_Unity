@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
-
+public delegate void ReadSFR_Handler(byte data);
+public delegate void ReadSFR_DotLed_Handler(byte P3_data, byte P0_data);
+public delegate void ReadSFR_DotLed_Bit_Handler(byte P3_data, int bit, byte P0_data);
+public delegate byte WriteSFR_Handler();
 public class VM_8051_Mono
 {
     #region 单例和初始化
@@ -21,12 +25,13 @@ public class VM_8051_Mono
     {
         AddDic();
         Reset();
+        vm_Interupt = new VM_Interupt_System();
     }
     public void Reset()
     {
         PC = 0x0000;
         cycles = 0;
-
+        in_interupt = false;
         byte auxr = (byte)(sfr_ram[AUXR] & 0xFC);
         byte auxr1 = (byte)(sfr_ram[AUXR1] & 0xF6);
         byte sbuf = sfr_ram[SBUF];
@@ -44,26 +49,25 @@ public class VM_8051_Mono
         Array.Clear(sfr_ram, 0, sfr_ram.Length);
         instr = new _instruct();
 
-        sfr_ram[P0] = 0xFF;//p0
-        sfr_ram[P1] = 0xFF;//p1
-        sfr_ram[P2] = 0xFF;//p2
-        sfr_ram[P3] = 0xFF;//p3
-        sfr_ram[ISP_DATA] = 0xFF;//ISP/IAP 数据寄存器
-        sfr_ram[AUXR] = auxr;
-        sfr_ram[AUXR1] = auxr1;
-        sfr_ram[SBUF] = sbuf;
-        sfr_ram[PCON] = pcon;
-        sfr_ram[IE] = ie;
-        sfr_ram[IP] = ip;
-        sfr_ram[T2MOD] = t2mod;
-        sfr_ram[WDT] = wdt;
-        sfr_ram[ISP_CMD] = isp_cmd;
-        sfr_ram[ISP_TRIG] = isp_trig;
-        sfr_ram[ISP_CONTR] = isp_contr;
+        Write_Sfr(P0, 0xFF);
+        Write_Sfr(P1, 0xFF);
+        Write_Sfr(P2, 0xFF);
+        Write_Sfr(P3, 0xFF);
+        Write_Sfr(ISP_DATA, 0xFF);//ISP/IAP 数据寄存器
+        Write_Sfr(AUXR, auxr);
+        Write_Sfr(AUXR1, auxr1);
+        Write_Sfr(SBUF, sbuf);
+        Write_Sfr(PCON, pcon);
+        Write_Sfr(IE, ie);
+        Write_Sfr(IP, ip);
+        Write_Sfr(T2MOD, t2mod);
+        Write_Sfr(WDT, wdt);
+        Write_Sfr(ISP_CMD, isp_cmd);
+        Write_Sfr(ISP_TRIG, isp_trig);
+        Write_Sfr(ISP_CONTR, isp_contr);
         Write_Sfr(SP, 0x7);
     }
     #endregion
-
     #region 机器码映射
     private void AddDic()
     {
@@ -385,17 +389,60 @@ public class VM_8051_Mono
         opcodeDic.Add(0xFF, "MOVE_Rn_ACC");
     }
     #endregion
-
-    #region 回调
+ 
+    #region 回调 外部获取数据的接口
+    //Led数据
     public ReadSFR_Handler read_P2_data_handler;
+    //DotLed数据
+    public ReadSFR_DotLed_Handler read_P3_456_data_handler;
+    public ReadSFR_DotLed_Bit_Handler read_P3_456_data_bit_handler;
+    //独立按键输入的数据接口 k3 k4作为外部中断的处理
+    public WriteSFR_Handler has_Input_Alone_handler;
+    public bool isInputAloneKey = false;
+    public bool isInputK3AloneKey = false;
+    public bool isInputK4AloneKey = false;
+    byte nowP3_Kn_data;
+    byte inputP3_Kn_Data;
+
+    //矩阵按键的输入值
+    byte nowP1data; //当前P1被输出的值
+    byte inputP1Data;//当前输入的按键值
+    public bool isInput = false;//矩阵按键是否输入
+    public WriteSFR_Handler has_Input_P1_data_handler;
+    //Uart接收发送
+    public bool isInputChar = false;
+    byte InputTextData;
+    public ReadSFR_Handler Sbuf_Transmit_handler;//Uart发送
+    public WriteSFR_Handler Sbuf_Receive_handler;//Uart接收
+
+
+    //外部调用接口,读写SFR
+    public void WriteSFR_BIT_ACTION(byte addr,int bit) 
+    {
+        Write_Bit_Default(addr, bit);
+    }
+    public byte ReadSFR_BIT_ACTION(byte addr)
+    {
+       return Read_Bit_Default(addr);
+    }
+    public void WriteSFR_ACTION(byte addr,byte data) 
+    {
+        sfr_ram[addr] = data;
+    }
+    public byte ReadSFR_Action(byte addr)
+    {
+        byte data = sfr_ram[addr];
+        return data;
+    }
+
     #endregion
 
     #region 数据结构 
-
-    public bool isRunning = true;
-    public Dictionary<byte, string> opcodeDic;
+    public bool isRunning = false;
+    private Dictionary<byte, string> opcodeDic;
     public _instruct instr;
-
+    private VM_Interupt_System vm_Interupt;
+    public bool in_interupt = false;
     public ushort PC;
     public int cycles;
     private byte[] code;
@@ -407,7 +454,6 @@ public class VM_8051_Mono
     private readonly byte SP = 0x81;
     private readonly byte DPTR_L = 0x82;
     private readonly byte DPTR_H = 0x83;
-
     //程序状态字特殊功能寄存器
     private readonly byte PSW = 0xD0;
     private readonly byte PSW_P = 0xD0 + 0; //ACC里1的个数为奇数时置1
@@ -417,69 +463,46 @@ public class VM_8051_Mono
     //private readonly byte PSW_F0 = 0xD0+5;
     //private readonly byte PSW_AC = 0xD0+6;
     private readonly byte PSW_CY = 0xD0 + 7;
-
-    //串行控制特殊功能寄存器
-    //private readonly byte SCON = 0x98;
-    //private readonly byte SCON_TI = 0x98+1;
-    //private readonly byte SCON_RI = 0x98 + 0;
-
-    //TCON 定时器/计数器 控制寄存器
-    //private readonly byte TCON =0x88;
-    private readonly byte TCON_TR0 = 0x88+4;
-    private readonly byte TCON_TF0 = 0x88 +5;
-
     //定时器/计数器 工作模式寄存器
-    private readonly byte TMOD = 0x89;
-
-    //定时器0的高八位
-    private readonly byte TH0 = 0x8C;
-    //定时器0的低八位
-    private readonly byte TL0 = 0x8A;
-
-    //串行数据缓冲特殊功能寄存器
-    private readonly byte SBUF = 0x99;
-
     //辅助寄存器 xxxx xx00
     private readonly byte AUXR = 0x8E;
     //辅助寄存器1
     private readonly byte AUXR1 = 0xA2;
-
     //PCON 电源控制寄存器
     private readonly byte PCON = 0x87;
-
+    #region 中断 相关
     //中断允许寄存器
     private readonly byte IE = 0xA8;
-
     //中断优先级寄存器
     private readonly byte IP = 0xB8;
-
+    //中断优先高
+    private readonly byte IPH = 0xB7;
+    //串行数据缓冲特殊功能寄存器
+    //private const byte SBUF = 0x99;
+    //定时器计数器2
+    private readonly byte T2CON = 0xC8;
+    //辅助中断控制器
+    private readonly byte XICON = 0xC0;
+    #endregion
     //定时器2模式模式寄存器
     private readonly byte T2MOD = 0xC9;
-
     //看门狗控制寄存器
     private readonly byte WDT = 0xE1;
-
     //ISP/IAP数据寄存器
     private readonly byte ISP_DATA = 0xE2;
-
     // ISP/IAP命令寄存器
     private readonly byte ISP_CMD = 0xE5;
-
     //ISP/IAP命令触发寄存器
     private readonly byte ISP_TRIG = 0xE6;
-
     //ISP/IAP控制寄存器
     private readonly byte ISP_CONTR = 0xE7;
-
     //P4口
     private readonly byte P4 = 0xE8;
-
     // I/O口
-    private readonly byte P0 = 0x80;
-    private readonly byte P1 = 0x90;
-    private readonly byte P2 = 0xA0;
-    private readonly byte P3 = 0xB0;
-
+    private const byte P0 = 0x80;
+    private const byte P1 = 0x90;
+    private const byte P2 = 0xA0;
+    private const byte P3 = 0xB0;
     //默认放在0区，具体是由PSW中RS1 RS0两个位选决定的
     private readonly byte R0 = 0x00;
     private readonly byte R1 = 0x01;
@@ -489,7 +512,6 @@ public class VM_8051_Mono
     private readonly byte R5 = 0x05;
     private readonly byte R6 = 0x06;
     private readonly byte R7 = 0x07;
-
     private readonly byte sfr_addr_start = 0x80;
     private readonly byte ram_bit_addr_start = 0x20;
     #endregion
@@ -497,7 +519,7 @@ public class VM_8051_Mono
     #region 打印工具
     public int vm_cycles() => cycles;
     public ushort vm_pc() => PC;
-    public void PrintRegResult()
+    private void PrintRegResult()
     {
         Debug.Log("RO: " + VmRead(mem_type.RAM, (ushort)(R0 +get_psw_rs()*8)).ToString("x"));
         Debug.Log("R1: " + VmRead(mem_type.RAM, (ushort)(R1 + get_psw_rs() * 8)).ToString("x"));
@@ -507,32 +529,6 @@ public class VM_8051_Mono
         Debug.Log("R5: " + VmRead(mem_type.RAM, (ushort)(R5 + get_psw_rs() * 8)).ToString("x"));
         Debug.Log("R6: " + VmRead(mem_type.RAM, (ushort)(R6 + get_psw_rs() * 8)).ToString("x"));
         Debug.Log("R7: " + VmRead(mem_type.RAM, (ushort)(R7 + get_psw_rs() * 8)).ToString("x"));
-
-        Debug.Log("0x20:" + VmRead(mem_type.RAM, 0x20).ToString("x"));
-        Debug.Log("0x21:" + VmRead(mem_type.RAM, 0x21).ToString("x"));
-        Debug.Log("0x22:" + VmRead(mem_type.RAM, 0x22).ToString("x"));
-        Debug.Log("0x23:" + VmRead(mem_type.RAM, 0x23).ToString("x"));
-        Debug.Log("0x24:" + VmRead(mem_type.RAM, 0x24).ToString("x"));
-        //Debug.Log("0x25:" + VmRead(mem_type.RAM, 0x25).ToString("x"));
-        //Debug.Log("0x26:" + VmRead(mem_type.RAM, 0x26).ToString("x"));
-        //Debug.Log("0x27:" + VmRead(mem_type.RAM, 0x27).ToString("x"));
-        //Debug.Log("0x28:" + VmRead(mem_type.RAM, 0x28).ToString("x"));
-        //Debug.Log("0x29:" + VmRead(mem_type.RAM, 0x29).ToString("x"));
-        //Debug.Log("0x2A:" + VmRead(mem_type.RAM, 0x2A).ToString("x"));
-        //Debug.Log("0x2B:" + VmRead(mem_type.RAM, 0x2B).ToString("x"));
-
-
-        //Debug.Log("0x40: " + VmRead(mem_type.RAM, 0x40).ToString("x"));
-        //Debug.Log("0x41:" + VmRead(mem_type.RAM, 0x41).ToString("x"));
-        //Debug.Log("0x42:" + VmRead(mem_type.RAM, 0x42).ToString("x"));
-        //Debug.Log("0x43:" + VmRead(mem_type.RAM, 0x43).ToString("x"));
-        //Debug.Log("0x44:" + VmRead(mem_type.RAM, 0x44).ToString("x"));
-        //Debug.Log("0x45:" + VmRead(mem_type.RAM, 0x45).ToString("x"));
-        //Debug.Log("0x46:" + VmRead(mem_type.RAM, 0x46).ToString("x"));
-        //Debug.Log("0x47:" + VmRead(mem_type.RAM, 0x47).ToString("x"));
-        //Debug.Log("0x48:" + VmRead(mem_type.RAM, 0x48).ToString("x"));
-
-
         Debug.Log("ACC: " + VmRead(mem_type.SFR, A).ToString("x"));
         Debug.Log("B: " + VmRead(mem_type.SFR, B).ToString("x"));
         Debug.Log("SP: " + VmRead(mem_type.SFR, SP).ToString("x"));
@@ -540,8 +536,31 @@ public class VM_8051_Mono
         Debug.Log("PC: " + vm_pc().ToString("x"));
         Debug.Log("Cycles: " + vm_cycles());
         Debug.Log("PSW: " + VmRead(mem_type.SFR, PSW).ToString("x"));
-        //Debug.Log("PSW_CY: " + VmRead(mem_type.BIT, PSW_CY).ToString("x"));
     }
+    private void Show_Disa()
+    {
+        InstructInfo info = VM_8051_Mono.Instance.instr.info;
+        if (VM_8051_Mono.Instance.opcodeDic.ContainsKey(VM_8051_Mono.Instance.instr.opcode))
+        {
+            string opcodeHex = VM_8051_Mono.Instance.instr.opcode.ToString("X");
+            string op0 = VM_8051_Mono.Instance.instr.op0.ToString("X");
+            string op1 = VM_8051_Mono.Instance.instr.op1.ToString("X");
+            if (info.bytes == 1)
+            {
+                Debug.Log($"opcode 0x{opcodeHex} : ASM_Name {info.opcode_name} ");
+            }
+            else if (info.bytes == 2)
+            {
+                Debug.Log($"opcode 0x{opcodeHex}: ASM_Name {info.opcode_name} , opNum0 0x{op0} ");
+            }
+            else
+            {
+                Debug.Log($"opcode 0x{opcodeHex}: ASM_Name {info.opcode_name} ,opNum0 0x{op0} , opNum1 0x{op1}");
+            }
+            Debug.Log($"PC: {VM_8051_Mono.Instance.vm_pc().ToString("x")},Cycles: {VM_8051_Mono.Instance.vm_cycles()}");
+        }
+    }
+    
     #endregion
 
     #region  加载、执行处理
@@ -565,33 +584,61 @@ public class VM_8051_Mono
         if (!opcodeDic.ContainsKey(instr.opcode)) { Debug.Log("没有该操作码，不执行"); return; }
         instr.info.exec(instr);
         Update_PSW_P();
-        //Updata_timer(instr.info.cycles);
+        Updata_timer(instr.info.cycles);
+        if(isInputChar)
+        {
+            Write_Bit(SFR_SCON_RI, 1);
+            isInputChar = false;
+        }
+        vm_Interupt.Execute_Interupt();
     }
+    private const byte SBUF = 0x99;
+    //串行控制特殊功能寄存器
+    private const byte SCON = 0x98;
+    private const byte SFR_SCON_REN = 0x98 + 4;
+    private const byte SFR_SCON_SM1 = 0x98 + 4;//只模拟了SM1模式
+    private const byte SFR_SCON_TI = 0x98 + 1;
+    private const byte SFR_SCON_RI = 0x98 + 0;
+
+    private readonly byte TMOD = 0x89;
+    //定时器0的高八位
+    private readonly byte TH0 = 0x8C;//非可位寻址寄存器
+    //定时器0的低八位
+    private readonly byte TL0 = 0x8A;
+    //TCON 定时器/计数器 控制寄存器
+    // private readonly byte TCON = 0x88;
+    private readonly byte TCON_TR0 = 0x88 + 4;
+    private readonly byte TCON_TF0 = 0x88 + 5;
+    byte tmod;
+    byte tr0;//计数器定时器开启标志位
+    int count = 0;//计数
     private void Updata_timer(int Cycles) 
     {
         //读取定时器工作模式
-        byte tmod = Read_Sfr(TMOD);
+        tmod = Read_Sfr(TMOD);
         //读取定时器0的TR0位
-        byte tr0=Read_Bit(TCON_TR0);
-        //定时器启动
+        tr0=Read_Bit(TCON_TR0);
+        //定时器启动，TR0置1才启动定时器
         if (tr0 != 0) 
         {
             switch (tmod&0x3)
             {
                 case 0x00:
                     break;
-                    //定时器16位的工作模式
+                //定时器16位的工作模式
                 case 0x01:
-                    int count = (Read_Sfr(TH0)<<8) | Read_Sfr(TL0);
-                    count += Cycles;
-                    if (count > 0xffff) 
                     {
-                        Write_Bit(TCON_TF0,1);
-                        count = 0;
+                        count = (Read_Sfr(TH0) << 8) | Read_Sfr(TL0);
+                        count += Cycles;
+                        if (count > 0xffff)
+                        {
+                            Write_Bit(TCON_TF0, 1);
+                            count = 0;
+                        }
+                        Write_Sfr(TH0, (byte)(count >> 8));
+                        Write_Sfr(TL0, (byte)(count & 0xFF));
+                        break;
                     }
-                    Write_Sfr(TH0, (byte)(count >> 8));
-                    Write_Sfr(TL0, (byte)(count & 0xFF));
-                    break;
                 case 0x02:
                     break;
                 case 0x03:
@@ -601,25 +648,18 @@ public class VM_8051_Mono
             }
         }
     }
-    public void Run(ushort stop_addr, int stop_cycle)
+    public void Run()
     {
         do
         {
+            //Write_Sfr(P1, 0x77);
             FetchCode();
             ExecuteInstruction();
-            if (PC == stop_addr)
-            {
-                Debug.Log("到达指定的PC地址，退出...");
-                return;
-            }
-            if (stop_cycle != 0 && (cycles >= stop_cycle))
-            {
-                Debug.Log("到达指定的运行周期，退出...");
-                return;
-            }
+            //Show_Disa();
         } while (isRunning);
     }
 
+    //A累加器中的值是否为奇数
     private void Update_PSW_P()
     {
         byte a = Read_Sfr(A);
@@ -724,7 +764,7 @@ public class VM_8051_Mono
                 Write_Sfr(DPTR_L, (byte)data);
                 break;
             case OpType.R0_R1:
-                byte addr = sfr_ram[instruct.opcode & 0x01+get_psw_rs() * 8];
+                byte addr = sfr_ram[instruct.opcode & 0x1+get_psw_rs() * 8];
                 Write_Ram(addr, (byte)data);
                 break;
             case OpType.PSW_Cy:
@@ -854,10 +894,19 @@ public class VM_8051_Mono
     {
         switch (addr)
         {
-            //P2
-            case 0xA0:
-                read_P2_data_handler?.Invoke(data);
+            case SBUF:
+                Sbuf_Transmit_handler?.Invoke(data);
+                Write_Bit(SFR_SCON_TI,1);
                 sfr_ram[addr] = data;
+                break;
+            case P3:
+                sfr_ram[addr] = data;
+                read_P3_456_data_handler?.Invoke(data,sfr_ram[P0]);
+                break;
+            //P2
+            case P2:
+                sfr_ram[addr] = data;
+                read_P2_data_handler?.Invoke(data);
                 break;
             default:
                 {
@@ -869,10 +918,32 @@ public class VM_8051_Mono
                 break;
         }
     }
+
     public byte Read_Sfr(byte addr)
     {
         switch (addr)
         {
+            case SBUF:
+                InputTextData = (byte)(Sbuf_Receive_handler?.Invoke());
+                if (InputTextData !=0) 
+                {
+                    sfr_ram[SBUF] = InputTextData;
+                    return sfr_ram[SBUF];
+                }
+                InputTextData = (byte)0;
+                return sfr_ram[SBUF];
+            case P1:
+                if (isInput)
+                {
+                    nowP1data = sfr_ram[P1];//0000 1111
+                    inputP1Data = (byte)(has_Input_P1_data_handler?.Invoke()); //0111 0111 1000 1000
+                    return (byte)(nowP1data & inputP1Data);
+                }
+                else
+                {
+                    //弱上拉，不用进行改变
+                    return sfr_ram[P1];
+                }
             default:
                 return (addr >= sfr_addr_start) ? sfr_ram[addr] : (byte)0;
         }
@@ -885,8 +956,8 @@ public class VM_8051_Mono
         switch (byte_idx)
         {
             //P2
-            case 0xA0:
-                read_P2_data_handler?.Invoke(sfr_ram[byte_idx]);
+            case P2:
+                  read_P2_data_handler?.Invoke(sfr_ram[byte_idx]);
                 break;
             default:
                 break;
@@ -907,6 +978,7 @@ public class VM_8051_Mono
         else
         {
             byte byte_idx = (byte)(addr / 8 * 8);
+            read_P3_456_data_bit_handler?.Invoke(addr, bit,sfr_ram[P0]);
             sfr_ram[byte_idx] &= (byte)~(1 << bit_offset);
             sfr_ram[byte_idx] |= (bit | 0x0) != 0x0 ? (byte)(1 << bit_offset) : (byte)0;
         }
@@ -932,10 +1004,37 @@ public class VM_8051_Mono
             //位偏移与上面的一样，addr%8 就是8除不尽的位偏移
             byte byte_idx = (byte)(addr / 8 * 8);//addr = 0x85  除以8 正好得到字节数(除不尽的会抹除)，
                                                  //再乘以一个字节的位数，正好等于当前寄存器地址 
-            return (sfr_ram[byte_idx] & (1 << bit_offset)) != 0 ? (byte)1 : (byte)0;
+            switch (byte_idx)
+            {
+                case P1:
+                    if (isInput) 
+                    {
+                        nowP1data = sfr_ram[P1];
+                        inputP1Data = (byte)(has_Input_P1_data_handler?.Invoke());
+                        return (byte)((nowP1data & inputP1Data) & (1 << bit_offset)) != 0 ? (byte)1 : (byte)0;
+                    }
+                    else
+                    {
+                        return (sfr_ram[P1] & (1 << bit_offset)) != 0 ? (byte)1 : (byte)0;
+                    }
+                case P3:
+                    if (isInputAloneKey) 
+                    {
+                        nowP3_Kn_data = sfr_ram[P3];
+                        inputP3_Kn_Data = (byte)(has_Input_Alone_handler?.Invoke());
+                        isInputK3AloneKey = inputP3_Kn_Data - P3 == 2 ? true : false;
+                        isInputK4AloneKey = inputP3_Kn_Data - P3 == 3 ? true : false;
+                        nowP3_Kn_data = (byte)(nowP3_Kn_data &( 0 << (inputP3_Kn_Data - P3)));
+                        return (byte)(nowP3_Kn_data & (1 << bit_offset)) != 0 ? (byte)1 : (byte)0;
+                    }
+                    else
+                    {
+                        return (sfr_ram[byte_idx] & (1 << bit_offset)) != 0 ? (byte)1 : (byte)0;
+                    }
+                default:
+                    return (sfr_ram[byte_idx] & (1 << bit_offset)) != 0 ? (byte)1 : (byte)0;
+            }
         }
     }
     #endregion
 }
-public delegate void ReadSFR_Handler(byte data);
-public delegate void WriteSFR_Handler(byte addr, byte data);

@@ -82,8 +82,6 @@ public class RotateCam : MonoBehaviour
         {
             transform.GetComponent<Camera>().fieldOfView = Mathf.Clamp(Camera.main.fieldOfView - 5, 30, 90);
         }
-
-
         if (Input.GetAxis("Mouse ScrollWheel") < 0)
         {
             transform.GetComponent<Camera>().fieldOfView = Mathf.Clamp(Camera.main.fieldOfView + 5, 30, 90);

@@ -10,7 +10,7 @@ public class DJNZ_DIRECT_rel : InstructInfo
         cycles = 2;
         op0_mode = OpType.DIRECT;
         op1_mode = OpType.IMM8;
-        opcode_name = "JNZ rel";
+        opcode_name = "DJNZ_DIRECT_rel";
     }
     public override void exec(_instruct instr)
     {

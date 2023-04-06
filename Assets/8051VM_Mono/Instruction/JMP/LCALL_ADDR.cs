@@ -11,7 +11,7 @@ public class LCALL_ADDR : InstructInfo
         cycles = 2;
         op0_mode = OpType.NONE;
         op1_mode = OpType.NONE;
-        opcode_name = "LCALL addr11";
+        opcode_name = "LCALL addr16";
     }
     public override void exec(_instruct instr)
     {

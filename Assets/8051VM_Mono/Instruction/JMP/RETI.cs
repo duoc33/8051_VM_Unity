@@ -10,7 +10,7 @@ public class RETI : InstructInfo
         cycles = 2;
         op0_mode = OpType.NONE;
         op1_mode = OpType.NONE;
-        opcode_name = "RET";
+        opcode_name = "RETI";
     }
     public override void exec(_instruct instr)
     {
@@ -21,5 +21,6 @@ public class RETI : InstructInfo
         VM_8051_Mono.Instance.Write_Sfr(0x81, sp);
         VM_8051_Mono.Instance.PC = ret_addr;
         VM_8051_Mono.Instance.cycles += instr.info.cycles;
+        VM_8051_Mono.Instance.in_interupt = false;
     }
 }
