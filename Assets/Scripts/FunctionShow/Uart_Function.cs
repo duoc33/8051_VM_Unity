@@ -57,9 +57,11 @@ public class Uart_Function : MonoBehaviour
     }
     public void close() 
     {
-        InputPanel.GetComponentInChildren<Text>().text="";
+        if(InputPanel==null)return;
+        if(OutputPanel==null)return;
+        InputPanel.GetComponentInChildren<Text>().text = "";
         InputPanel.SetActive(false);
-        OutputPanel.GetComponentInChildren<Text>().text ="";
+        OutputPanel.GetComponentInChildren<Text>().text = "";
         OutputPanel.SetActive(false);
         MonoToVm?.Clear();
     }

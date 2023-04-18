@@ -47,7 +47,6 @@ public class VM_Interupt_System
     public void Execute_Interupt() 
     {
         if (!InteruptEnable())return;
-        //Debug.Log("EA"+InteruptEnable());
         if(VM_8051_Mono.Instance.in_interupt)return;
         if (InteruptQueue.Count > 0) 
         {

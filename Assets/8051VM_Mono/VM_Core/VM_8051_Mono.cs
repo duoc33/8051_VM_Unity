@@ -24,6 +24,7 @@ public class VM_8051_Mono
     private void Init_VM()
     {
         AddDic();
+        // Debug.Log(opcodeDic.Count);
         Reset();
         vm_Interupt = new VM_Interupt_System();
     }
@@ -571,11 +572,14 @@ public class VM_8051_Mono
     }
     private void FetchCode()
     {
+        //取指令
         instr.opcode = code[PC];
         if (!opcodeDic.ContainsKey(instr.opcode)) { Debug.Log("没有该操作码"); return; }
+        //动态实例指令信息类
         Type opcodeType = Type.GetType(opcodeDic[instr.opcode]);
         InstructInfo info = Activator.CreateInstance(opcodeType) as InstructInfo;
         instr.info = info;
+        //赋值操作数
         instr.op0 = (info.bytes > 1) ? code[vm_pc() + 1] : (byte)0;
         instr.op1 = (info.bytes > 2) ? code[vm_pc() + 2] : (byte)0;
     }
@@ -614,13 +618,13 @@ public class VM_8051_Mono
     int count = 0;//计数
     private void Updata_timer(int Cycles) 
     {
-        //读取定时器工作模式
-        tmod = Read_Sfr(TMOD);
         //读取定时器0的TR0位
         tr0=Read_Bit(TCON_TR0);
         //定时器启动，TR0置1才启动定时器
         if (tr0 != 0) 
         {
+            //读取定时器工作模式
+            tmod = Read_Sfr(TMOD);
             switch (tmod&0x3)
             {
                 case 0x00:

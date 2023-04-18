@@ -19,9 +19,8 @@ using System.Linq;
                     // 检查行是否以 ':' 开始
                     if (line.StartsWith(":"))
                     {
-                        // 解析行中的字节数组
+                        // 解析每行的字节数组
                         byte[] data = ParseHexRecord(line);
-
                         //本行的数据长度(不包括起始地址、数据类型和检验) 16进制字节数
                         byte lineBytesCount = data[0];
                         //该行数据的PC地址
@@ -69,6 +68,6 @@ using System.Linq;
                                      .ToArray();
             return data;
         }
-        #endregion
+    #endregion
 
-    }
+}
